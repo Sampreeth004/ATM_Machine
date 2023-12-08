@@ -1,0 +1,4 @@
+MachineID,Location,MaintenanceSchedule,Status,CashBalance
+1, Main Street , Monthly,Operational,5000.00
+2, Elm Street, Bi-Weekly,Out of Service,0.00
+3, Oak Avenue, Monthly,Operational,7500.00
