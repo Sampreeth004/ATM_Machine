@@ -14,8 +14,8 @@ db_config = {
 try:
     cnx = mysql.connector.connect(**db_config)
     cursor = cnx.cursor()
-    cursor.execute("DROP TABLE admintable")
-    cursor.execute("DROP TABLE custtable")
+    # cursor.execute("DROP TABLE admintable")
+    # cursor.execute("DROP TABLE custtable")
     cursor.execute("DROP TABLE dentable")
     cursor.execute("DROP TABLE machinetable")
 except mysql.connector.Error as err:
@@ -33,7 +33,7 @@ csv_file_path = 'AdminData.csv'
 df = pd.read_csv(csv_file_path)
 
 # Define the table name
-table_name = 'AdminTable'
+table_name = 'admintable'
 
 # Define the table creation query
 create_table_query = f"""

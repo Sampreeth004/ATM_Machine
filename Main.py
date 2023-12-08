@@ -6,6 +6,7 @@ from tabulate import tabulate
 import random
 import csv
 import hashlib
+from decimal import Decimal
 # MySQL connection setup
 db_config = {
     'user': 'root',
@@ -163,31 +164,6 @@ def is_transtable_exists():
         else:
             return False
 
-# Function to export transaction logs from transtable to a CSV file
-def export_transaction_logs():
-    if not is_transtable_exists():
-        print("No transaction logs exist")
-        return None
-
-    select_query = "SELECT * FROM transtable"
-    if cursor.execute(select_query).rowcount():
-        transaction_logs = cursor.fetchall()
-
-    if transaction_logs:
-        file_name = "transaction_logs.csv"
-        with open(file_name, 'w', newline='') as csv_file:
-            csv_writer = csv.DictWriter(csv_file, fieldnames=transaction_logs[0].keys())
-            csv_writer.writeheader()
-
-            for log in transaction_logs:
-                # Convert timestamp to a readable format
-                log['Date_Time'] = log['Date_Time'].strftime("%Y-%m-%d %H:%M:%S")
-                csv_writer.writerow(log)
-
-        print(f"Transaction logs exported to {file_name} successfully.")
-    else:
-        print("No transaction logs found.")
-
 def view_machine_table():
     query = "SELECT * FROM MachineTable"
     cursor.execute(query)
@@ -200,7 +176,50 @@ def view_machine_table():
         print(tabulate(rows, headers=headers, tablefmt="pretty"))
     else:
         print("No data found in MachineTable.")
+    cnx.commit()
+def export_transaction_logs_to_csv(filename="transaction_logs.csv"):
+    try:
+        cnx = mysql.connector.connect(
+            user='root',
+            password='nanu2004',
+            host='localhost',
+            database='atmdb'
+        )
 
+        cursor = cnx.cursor()
+
+        # Fetch all records from the transaction_table
+        query = "SELECT * FROM transaction_table"
+        cursor.execute(query)
+        transaction_logs = cursor.fetchall()
+
+        if not transaction_logs:
+            print("No transaction logs found.")
+            return
+
+        # Get the column names
+        columns = [i[0] for i in cursor.description]
+
+        # Write to CSV file
+        with open(filename, 'w', newline='') as csvfile:
+            csv_writer = csv.writer(csvfile)
+            csv_writer.writerow(columns)
+            csv_writer.writerows(transaction_logs)
+
+        print(f"Transaction logs exported to {filename} successfully.")
+
+    except mysql.connector.Error as err:
+        if err.errno == errorcode.ER_ACCESS_DENIED_ERROR:
+            print("Access denied. Check your username and password.")
+        elif err.errno == errorcode.ER_BAD_DB_ERROR:
+            print("Database does not exist.")
+        else:
+            print(err)
+
+    finally:
+        # Close the database connection
+        cursor.close()
+        cnx.close()
 # Administrator Dashboard
 def admin_dashboard(admin):
     while True:
@@ -243,7 +262,7 @@ def admin_dashboard(admin):
                 print("Invalid option. Please try again.")
         elif option == '4':
             print("Cash Management...")
-            view_machine_table()
+            view_machine_table() # View machine table before doing the cash management
             mid = input("Enter the machine ID you want to manage: ")
             while True:
                 
@@ -255,12 +274,18 @@ def admin_dashboard(admin):
                 ch=input("Your choice: ")
                 if ch=='1':
                     print("Cash Loading")
+                    load_cash(mid)
+                    view_machine_table()
                     # Cash loading algo
                 elif ch=='2':
                     print("Withdrawl Sample")
+                    dispense_cash(mid)
+                    view_machine_table()
                     # Sample withdrawl algo
                 elif ch=='3':
                     print("Emptying cash casettes")
+                    empty_cassettes(mid)
+                    view_machine_table()
                 elif ch=='4':
                     print("Exitting!!")
                     break
@@ -268,7 +293,7 @@ def admin_dashboard(admin):
                     print("Invalid choice!!")
         elif option == '5':
             print("Viewing Transaction Logs...")
-            export_transaction_logs();
+            export_transaction_logs_to_csv("transaction_logs_export.csv")
         elif option == '6':
             print("Exiting Admin Dashboard.")
             break
@@ -404,11 +429,164 @@ def user_dashboard():
                 break
             else:
                 print("Invalid choice. Please try again.")
+# Function to load cash into a specified machine
+def load_cash(machine_id):
+    try:
+        cnx = mysql.connector.connect(
+            user='root',
+            password='nanu2004',
+            host='localhost',
+            database='atmdb'
+        )
 
+        cursor = cnx.cursor()
 
+        # Get the current cash balance of the selected machine
+        query_balance = "SELECT CashBalance FROM Machinetable WHERE MachineID = %s"
+        cursor.execute(query_balance, (machine_id,))
+        current_balance = cursor.fetchone()[0] or 0
+
+        # Get the cash amount to load
+        amount_to_load = Decimal(input("Enter the amount to load: "))
+
+        # Update the Machinetable with the loaded cash
+        update_query = "UPDATE Machinetable SET CashBalance = CashBalance + %s WHERE MachineID = %s"
+        cursor.execute(update_query, (amount_to_load, machine_id))
+        cnx.commit()
+
+        # Log the transaction in the transaction_table
+        insert_query = "INSERT INTO transaction_table (Accno, trans_amt, transaction_type, amount, transaction_time_stamp) VALUES (%s, %s, %s, %s, %s)"
+        cursor.execute(insert_query, (0000, amount_to_load, 'A', current_balance + amount_to_load, datetime.now()))
+        cnx.commit()
+
+        print("Cash loaded successfully.")
+
+    except mysql.connector.Error as err:
+        print(err)
+
+    finally:
+        # Close the database connection
+        cursor.close()
+        cnx.close()
+
+# Function for sample cash dispensing transaction
+def dispense_cash(machine_id):
+    try:
+        cnx = mysql.connector.connect(
+            user='root',
+            password='nanu2004',
+            host='localhost',
+            database='atmdb'
+        )
+
+        cursor = cnx.cursor()
+
+        # Get the current cash balance of the selected machine
+        query_balance = "SELECT CashBalance FROM Machinetable WHERE MachineID = %s"
+        cursor.execute(query_balance, (machine_id,))
+        current_balance = cursor.fetchone()[0] or 0
+
+        # Get the cash amount to dispense (sample transaction)
+        amount_to_dispense = Decimal(input("Enter the amount to dispense: "))
+
+        # Check if there is enough cash in the machine
+        if amount_to_dispense > current_balance:
+            print("Insufficient funds in the machine. Dispense transaction failed.")
+            return
+
+        # Update the Machinetable with the dispensed cash
+        update_query = "UPDATE Machinetable SET CashBalance = CashBalance - %s WHERE MachineID = %s"
+        cursor.execute(update_query, (amount_to_dispense, machine_id))
+        cnx.commit()
+
+        # Log the transaction in the transaction_table
+        insert_query = "INSERT INTO transaction_table (Accno, trans_amt, transaction_type, amount, transaction_time_stamp) VALUES (%s, %s, %s, %s, %s)"
+        cursor.execute(insert_query, (0000, amount_to_dispense, 'A', current_balance - amount_to_dispense, datetime.now()))
+        cnx.commit()
+
+        print("Cash dispensed successfully.")
+
+    except mysql.connector.Error as err:
+        print(err)
+
+    finally:
+        # Close the database connection
+        cursor.close()
+        cnx.close()
+
+# Function to empty cash cassettes of a specified machine
+def empty_cassettes(machine_id):
+    try:
+        cnx = mysql.connector.connect(
+            user='root',
+            password='nanu2004',
+            host='localhost',
+            database='atmdb'
+        )
+
+        cursor = cnx.cursor()
+
+        # Get the current cash balance of the selected machine
+        query_balance = "SELECT CashBalance FROM Machinetable WHERE MachineID = %s"
+        cursor.execute(query_balance, (machine_id,))
+        current_balance = cursor.fetchone()[0] or 0
+
+        # Update the Machinetable to empty the cash cassettes
+        update_query = "UPDATE Machinetable SET CashBalance = 0 WHERE MachineID = %s"
+        cursor.execute(update_query, (machine_id,))
+        cnx.commit()
+
+        # Log the transaction in the transaction_table
+        insert_query = "INSERT INTO transaction_table (Accno, trans_amt, transaction_type, amount, transaction_time_stamp) VALUES (%s, %s, %s, %s, %s)"
+        cursor.execute(insert_query, (0000, current_balance, 'A', 0, datetime.now()))
+        cnx.commit()
+
+        print("Cash cassettes emptied successfully.")
+
+    except mysql.connector.Error as err:
+        print(err)
+
+    finally:
+        # Close the database connection
+        cursor.close()
+        cnx.close()
+def display_transaction_table():
+    try:
+        cnx = mysql.connector.connect(
+            user='root',
+            password='nanu2004',
+            host='localhost',
+            database='atmdb'
+        )
+
+        cursor = cnx.cursor(dictionary=True)
+
+        # Fetch all records from the transaction_table
+        query = "SELECT * FROM transaction_table"
+        cursor.execute(query)
+        transaction_table_data = cursor.fetchall()
+
+        if not transaction_table_data:
+            print("No transactions found.")
+            return
+
+        # Display transaction_table in a table format
+        headers = transaction_table_data[0].keys()
+        rows = [tuple(row.values()) for row in transaction_table_data]
+        print("\nTransaction Table:")
+        print(tabulate(rows, headers=headers, tablefmt="pretty"))
+
+    except mysql.connector.Error as err:
+        print(err)
+
+    finally:
+        # Close the database connection
+        cursor.close()
+        cnx.close()
 # Main program
 def main():
     while True:
+        display_transaction_table()
         print("Welcome to XYZ Bank")
         print("\nChoose the dashboard you want to access:")
         print("1. Admin\n")
